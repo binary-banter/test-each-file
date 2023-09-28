@@ -1,0 +1,16 @@
+[package]
+name = "test_each_file"
+version = "0.0.0"
+authors = ["jonathan <jonathantbrouwer@gmail.com>"]
+description = "A `cargo generate` template for quick-starting a procedural macro crate"
+keywords = ["template", "proc_macro", "procmacro"]
+edition = "2021"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = "1.0.33"
+proc-macro2 = "1.0.67"
+syn = {version = "2.0.33", features = ["extra-traits", "full"]}
+
