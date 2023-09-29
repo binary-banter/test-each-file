@@ -1,5 +1,5 @@
-use proc_macro::{Ident, Span};
-use proc_macro2::{TokenStream, TokenTree};
+
+use proc_macro2::{Ident, TokenStream, TokenTree};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -7,23 +7,54 @@ use syn::{parse_macro_input, DeriveInput, Expr, Token};
 use quote::{format_ident, quote, ToTokens};
 use syn::LitStr;
 use syn::parse::{Parse, ParseStream};
+use syn::parse::discouraged::Speculative;
 
 #[derive(Debug)]
 struct ForEachFile {
     path: String,
+    prefix: Option<Ident>,
     function: Expr
 }
 
 impl Parse for ForEachFile {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        let input1 = input.fork();
 
+        if let Ok(ok) = ForEachFile::parse_with_prefix(&input1)  {
+            input.advance_to(&input1);
+            return Ok(ok);
+        }
 
-        let path = input.parse::<LitStr>()?;
+        ForEachFile::parse_without_prefix(input)
+    }
+}
+
+impl ForEachFile {
+    fn parse_with_prefix(input: ParseStream) -> syn::Result<Self> {
+        let path = input.parse::<LitStr>()?.value();
         input.parse::<Token![,]>()?;
+
+        let prefix = input.parse::<Ident>()?;
+        input.parse::<Token![,]>()?;
+
         let function = input.parse::<Expr>()?;
 
         Ok(ForEachFile {
-            path: path.value(),
+            path,
+            prefix: Some(prefix),
+            function,
+        })
+    }
+
+    fn parse_without_prefix(input: ParseStream) -> syn::Result<Self> {
+        let path = input.parse::<LitStr>()?.value();
+        input.parse::<Token![,]>()?;
+
+        let function = input.parse::<Expr>()?;
+
+        Ok(ForEachFile {
+            path,
+            prefix: None,
             function,
         })
     }
@@ -45,7 +76,11 @@ pub fn test_each_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream
 
                 let file_name = path.file_stem().expect("Expected file to have a name.").to_str().unwrap().to_owned()
                     .replace('.', "_");
-                let file_name = format_ident!("{}", file_name);
+                let file_name = if let Some(prefix) = &parsed.prefix {
+                    format_ident!("{prefix}_{file_name}")
+                } else {
+                    format_ident!("{file_name}")
+                };
 
                 let function = &parsed.function;
 
