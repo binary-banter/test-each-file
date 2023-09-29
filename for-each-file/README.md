@@ -1,0 +1,3 @@
+- Walk recursively over dirs
+- {prefix}_{dir1}_..._{dirn}_{filename}
+- maybe .out files?? probably not??

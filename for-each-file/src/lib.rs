@@ -2,12 +2,15 @@
 use proc_macro2::{Ident, TokenStream, TokenTree};
 use std::fs;
 use std::path::{Path, PathBuf};
+use itertools::Itertools;
+use pathdiff::diff_paths;
 
 use syn::{parse_macro_input, DeriveInput, Expr, Token};
 use quote::{format_ident, quote, ToTokens};
 use syn::LitStr;
 use syn::parse::{Parse, ParseStream};
 use syn::parse::discouraged::Speculative;
+use walkdir::WalkDir;
 
 #[derive(Debug)]
 struct ForEachFile {
@@ -68,30 +71,29 @@ pub fn test_each_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream
     let parsed = parse_macro_input!(input as ForEachFile);
 
     let mut tokens = TokenStream::new();
-    for entry in fs::read_dir(parsed.path).expect("Expected given path to be a directory.") {
-        if let Ok(entry) = entry {
-            let path = entry.path();
-            if path.is_file() {
 
+    for entry in WalkDir::new(&parsed.path).into_iter().filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if path.is_file() {
+            let mut diff = diff_paths(path, &parsed.path).unwrap();
+            diff.set_extension("");
 
-                let file_name = path.file_stem().expect("Expected file to have a name.").to_str().unwrap().to_owned()
-                    .replace('.', "_");
-                let file_name = if let Some(prefix) = &parsed.prefix {
-                    format_ident!("{prefix}_{file_name}")
-                } else {
-                    format_ident!("{file_name}")
-                };
+            let file_name = diff.components().map(|c| c.as_os_str().to_str().expect("Expected file names to be UTF-8.")).format("_");
+            let file_name = if let Some(prefix) = &parsed.prefix {
+                format_ident!("{prefix}_{file_name}")
+            } else {
+                format_ident!("{file_name}")
+            };
 
-                let function = &parsed.function;
+            let function = &parsed.function;
 
-                let content = fs::read_to_string(path).expect("Expected reading file to be successful.");
-                tokens.extend(quote! {
+            let content = fs::read_to_string(path).expect("Expected reading file to be successful.");
+            tokens.extend(quote! {
                     #[test]
                     fn #file_name() {
                         (#function)(#content)
                     }
                 });
-            }
         }
     }
 
