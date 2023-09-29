@@ -10,7 +10,6 @@ use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use walkdir::WalkDir;
 
-#[derive(Debug)]
 struct ForEachFile {
     path: String,
     prefix: Option<Ident>,

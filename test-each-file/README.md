@@ -1,3 +1,92 @@
-- Walk recursively over dirs
-- {prefix}_{dir1}_..._{dirn}_{filename}
-- maybe .out files?? probably not??
+# Test Each File
+
+Generates a test for each file in a specified directory.
+
+A simple example of the macro is shown below:
+```rust
+test_each_file! { in "./resources" => test }
+
+fn test(content: &str) {
+    // Make assertions on the `content` of the file here.
+}
+```
+
+Given the following file structure:
+```
+- resources
+  - a.txt
+  - b.txt
+  - extra
+    - c.txt
+- src
+  - main.rs
+```
+
+The macro expands to:
+```rust
+#[test]
+fn a() {
+    // The macro actually uses an absolute path for `a.txt` behind the scenes
+    test(include_str!("../resources/a.txt"))
+}
+
+#[test]
+fn b() {
+    test(include_str!("../resources/b.txt"))
+}
+
+#[test]
+fn extra_c() {
+    test(include_str!("../resources/extra/c.txt"))
+}
+```
+
+## Name prefix
+
+The names of the generated tests can be prefixed with a specified name, by using the `as` keyword. For example:
+```rust
+test_each_file! { in "./resources" as example => test }
+```
+The names of the tests will instead be `example_a`, `example_b`, and `example_extra_c`. 
+This feature is useful when `test_each_file!` is used multiple times in a single file, to prevent that the generated tests have the same name.
+
+## File grouping
+
+Sometimes it may be preferable to write a test that takes the contents of multiple files as input.
+A common use-case for this is testing a function that performs a transformation from a given input (`.in` file) to an output (`.out` file).
+
+
+```rust
+test_each_file! { for ["in", "out"] in "./resources" => test }
+
+fn test([input, output]: [&str; 2]) {
+    // Make assertions on the content of the `input` and `output` files here.
+}
+```
+
+The `.in` and `.out` files need to be in the same directory, as shown below:
+
+```
+- resources
+  - a.in
+  - a.out
+  - b.in
+  - b.out
+  - extra
+    - c.in
+    - c.out
+- src
+  - main.rs
+```
+
+## More examples
+
+The expression that is called on each file can also be a closure, for example:
+```rust
+test_each_file! { in "./resources" => |c: &str| assert!(c.contains("Hello World")) }
+```
+
+All the options above can be combined, for example:
+```rust
+test_each_file! { for ["in", "out"] in "./resources" as example => |[a, b]: [&str; 2]| assert_eq!(a, b) }
+```

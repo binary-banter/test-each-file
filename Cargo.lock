@@ -70,7 +70,7 @@ dependencies = [
 
 [[package]]
 name = "test_each_file"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "itertools",
  "pathdiff",

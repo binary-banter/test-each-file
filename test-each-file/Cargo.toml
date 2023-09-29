@@ -2,8 +2,8 @@
 name = "test_each_file"
 version = "0.0.1"
 authors = ["Jonathan Brouwer <jonathantbrouwer@gmail.com>", "Julia Dijkstra"]
-description = "Generate a test for each file in a directory."
-keywords = ["proc_macro", "procmacro"]
+description = "Generates a test for each file in a specified directory."
+keywords = ["test", "proc-macro"]
 edition = "2021"
 
 [lib]
@@ -12,7 +12,7 @@ proc-macro = true
 [dependencies]
 quote = "1.0.33"
 proc-macro2 = "1.0.67"
-syn = {version = "2.0.33", features = ["extra-traits", "full", "parsing"]}
+syn = {version="2.0.33", features=["full"]}
 walkdir = "2.4.0"
 pathdiff = "0.2.1"
 itertools = "0.11.0"

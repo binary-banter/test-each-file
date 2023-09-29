@@ -20,5 +20,7 @@ mod tests {
 
     test_each_file! { in "./test-each-file-example/resources_simple/" as simple => simple_test}
     test_each_file! { for ["in", "out"] in "./test-each-file-example/resources_complex/" as complex => complex_test}
+    test_each_file! { in "./test-each-file-example/resources_simple/" as closure => |c: &str| assert!(c.contains("Hello World")) }
+    test_each_file! { for ["in", "out"] in "./test-each-file-example/resources_complex/" as example => |[a, b]: [&str; 2]| assert_eq!(a, b) }
 }
 
