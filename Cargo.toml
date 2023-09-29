@@ -3,6 +3,6 @@
 resolver = "2"
 
 members = [
-    "for-each-file",
-    "for-each-file-example"
+    "test-each-file",
+    "test-each-file-example"
 ]
