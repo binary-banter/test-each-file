@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 use proc_macro2::{Ident, TokenStream};
-use std::fs;
+use std::fs::canonicalize;
 use itertools::Itertools;
 use pathdiff::diff_paths;
 
 use syn::{parse_macro_input, Expr, Token, bracketed, LitStr};
-use quote::{format_ident, quote, ToTokens};
+use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use walkdir::WalkDir;
@@ -61,7 +61,6 @@ pub fn test_each_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream
     let parsed = parse_macro_input!(input as ForEachFile);
 
     let mut tokens = TokenStream::new();
-
     let mut files = HashSet::new();
     for entry in WalkDir::new(&parsed.path).into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
@@ -88,23 +87,19 @@ pub fn test_each_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream
         let function = &parsed.function;
 
         let content = if parsed.extensions.is_empty() {
-            let content = fs::read_to_string(&file).expect("Expected reading file to be successful.");
-            tokens.extend(quote! {
-                #[test]
-                fn #file_name() {
-                    (#function)(#content)
-                }
-            });
-
-            quote!(#content)
+            let file = canonicalize(file).unwrap();
+            let file = file.to_str().unwrap();
+            quote!(include_str!(#file))
         } else {
             let mut content = TokenStream::new();
 
             for ext in &parsed.extensions {
                 let mut file = file.clone();
                 file.set_extension(ext);
-                let sub_content = fs::read_to_string(&file).expect("Expected reading file to be successful.");
-                content.extend(quote!(#sub_content,));
+                let file = canonicalize(file).unwrap();
+                let file = file.to_str().unwrap();
+
+                content.extend(quote!(include_str!(#file),));
             }
 
             quote!([#content])
