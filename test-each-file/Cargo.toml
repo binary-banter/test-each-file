@@ -6,6 +6,7 @@ description = "Generates a test for each file in a specified directory."
 keywords = ["test", "proc-macro"]
 edition = "2021"
 license = "MIT"
+repository = "https://github.com/binary-banter/test-each-file"
 
 [lib]
 proc-macro = true
