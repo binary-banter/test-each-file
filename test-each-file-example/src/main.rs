@@ -5,8 +5,10 @@ fn main() {
 }
 
 
-fn test(good: bool, content: &str) {
+fn test(content: &str) {
 
 }
 
-test_each_file!{ "./test-each-file-example/resources/", good, |x| test(true, x) }
+test_each_file!{ for ["a", "b"] in "./test-each-file-example/resources/" as good => test}
+
+// test_each_file!{ "./test-each-file-example/resources/", good, |x| test(true, x) }

@@ -1,71 +1,58 @@
 
-use proc_macro2::{Ident, TokenStream, TokenTree};
+use proc_macro2::{Ident, TokenStream};
 use std::fs;
-use std::path::{Path, PathBuf};
 use itertools::Itertools;
 use pathdiff::diff_paths;
 
-use syn::{parse_macro_input, DeriveInput, Expr, Token};
+use syn::{parse_macro_input, Expr, Token, bracketed, LitStr};
 use quote::{format_ident, quote, ToTokens};
-use syn::LitStr;
 use syn::parse::{Parse, ParseStream};
-use syn::parse::discouraged::Speculative;
+use syn::punctuated::Punctuated;
 use walkdir::WalkDir;
 
 #[derive(Debug)]
 struct ForEachFile {
     path: String,
     prefix: Option<Ident>,
-    function: Expr
+    function: Expr,
+    extensions: Option<Vec<String>>,
 }
 
 impl Parse for ForEachFile {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let input1 = input.fork();
+        let extensions = if input.peek(Token![for]) {
+            input.parse::<Token![for]>()?;
 
-        if let Ok(ok) = ForEachFile::parse_with_prefix(&input1)  {
-            input.advance_to(&input1);
-            return Ok(ok);
-        }
+            let content;
+            bracketed!(content in input);
 
-        ForEachFile::parse_without_prefix(input)
-    }
-}
+            Some(Punctuated::<LitStr, Token![,]>::parse_terminated(&content)?.into_iter().map(|s| s.value()).collect::<Vec<_>>())
+        } else {
+            None
+        };
 
-impl ForEachFile {
-    fn parse_with_prefix(input: ParseStream) -> syn::Result<Self> {
+        input.parse::<Token![in]>()?;
         let path = input.parse::<LitStr>()?.value();
-        input.parse::<Token![,]>()?;
 
-        let prefix = input.parse::<Ident>()?;
-        input.parse::<Token![,]>()?;
+        let prefix = if input.peek(Token![as]) {
+            input.parse::<Token![as]>()?;
+            Some(input.parse::<Ident>()?)
+        } else {
+            None
+        };
 
+        input.parse::<Token![=>]>()?;
         let function = input.parse::<Expr>()?;
 
-        Ok(ForEachFile {
+        Ok(Self {
             path,
-            prefix: Some(prefix),
+            prefix,
             function,
-        })
-    }
-
-    fn parse_without_prefix(input: ParseStream) -> syn::Result<Self> {
-        let path = input.parse::<LitStr>()?.value();
-        input.parse::<Token![,]>()?;
-
-        let function = input.parse::<Expr>()?;
-
-        Ok(ForEachFile {
-            path,
-            prefix: None,
-            function,
+            extensions
         })
     }
 }
 
-/// Example of [function-like procedural macro][1].
-///
-/// [1]: https://doc.rust-lang.org/reference/procedural-macros.html#function-like-procedural-macros
 #[proc_macro]
 pub fn test_each_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let parsed = parse_macro_input!(input as ForEachFile);
