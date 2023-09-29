@@ -1,4 +1,4 @@
-
+use std::collections::HashSet;
 use proc_macro2::{Ident, TokenStream};
 use std::fs;
 use itertools::Itertools;
@@ -15,7 +15,7 @@ struct ForEachFile {
     path: String,
     prefix: Option<Ident>,
     function: Expr,
-    extensions: Option<Vec<String>>,
+    extensions: Vec<String>,
 }
 
 impl Parse for ForEachFile {
@@ -26,9 +26,12 @@ impl Parse for ForEachFile {
             let content;
             bracketed!(content in input);
 
-            Some(Punctuated::<LitStr, Token![,]>::parse_terminated(&content)?.into_iter().map(|s| s.value()).collect::<Vec<_>>())
+            let extensions = Punctuated::<LitStr, Token![,]>::parse_terminated(&content)?.into_iter().map(|s| s.value()).collect::<Vec<_>>();
+            assert!(!extensions.is_empty(), "Expected at least one extension to be given.");
+
+            extensions
         } else {
-            None
+            vec![]
         };
 
         input.parse::<Token![in]>()?;
@@ -59,29 +62,60 @@ pub fn test_each_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream
 
     let mut tokens = TokenStream::new();
 
+    let mut files = HashSet::new();
     for entry in WalkDir::new(&parsed.path).into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
         if path.is_file() {
-            let mut diff = diff_paths(path, &parsed.path).unwrap();
-            diff.set_extension("");
-
-            let file_name = diff.components().map(|c| c.as_os_str().to_str().expect("Expected file names to be UTF-8.")).format("_");
-            let file_name = if let Some(prefix) = &parsed.prefix {
-                format_ident!("{prefix}_{file_name}")
-            } else {
-                format_ident!("{file_name}")
-            };
-
-            let function = &parsed.function;
-
-            let content = fs::read_to_string(path).expect("Expected reading file to be successful.");
-            tokens.extend(quote! {
-                    #[test]
-                    fn #file_name() {
-                        (#function)(#content)
-                    }
-                });
+            let mut file = path.to_path_buf();
+            if !parsed.extensions.is_empty() {
+                file.set_extension("");
+            }
+            files.insert(file);
         }
+    }
+
+    for file in files {
+        let mut diff = diff_paths(&file, &parsed.path).unwrap();
+        diff.set_extension("");
+        let file_name = diff.components().map(|c| c.as_os_str().to_str().expect("Expected file names to be UTF-8.")).format("_");
+
+        let file_name = if let Some(prefix) = &parsed.prefix {
+            format_ident!("{prefix}_{file_name}")
+        } else {
+            format_ident!("{file_name}")
+        };
+
+        let function = &parsed.function;
+
+        let content = if parsed.extensions.is_empty() {
+            let content = fs::read_to_string(&file).expect("Expected reading file to be successful.");
+            tokens.extend(quote! {
+                #[test]
+                fn #file_name() {
+                    (#function)(#content)
+                }
+            });
+
+            quote!(#content)
+        } else {
+            let mut content = TokenStream::new();
+
+            for ext in &parsed.extensions {
+                let mut file = file.clone();
+                file.set_extension(ext);
+                let sub_content = fs::read_to_string(&file).expect("Expected reading file to be successful.");
+                content.extend(quote!(#sub_content,));
+            }
+
+            quote!([#content])
+        };
+
+        tokens.extend(quote! {
+            #[test]
+            fn #file_name() {
+                (#function)(#content)
+            }
+        });
     }
 
     proc_macro::TokenStream::from(tokens)
