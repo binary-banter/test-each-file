@@ -5,6 +5,7 @@ authors = ["Jonathan Brouwer <jonathantbrouwer@gmail.com>", "Julia Dijkstra"]
 description = "Generates a test for each file in a specified directory."
 keywords = ["test", "proc-macro"]
 edition = "2021"
+license = "MIT"
 
 [lib]
 proc-macro = true

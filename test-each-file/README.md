@@ -1,6 +1,6 @@
 # Test Each File
 
-Generates a test for each file in a specified directory.
+Easily generate tests for files in a specified directory for comprehensive testing.
 
 A simple example of the macro is shown below:
 ```rust
@@ -55,7 +55,6 @@ This feature is useful when `test_each_file!` is used multiple times in a single
 Sometimes it may be preferable to write a test that takes the contents of multiple files as input.
 A common use-case for this is testing a function that performs a transformation from a given input (`.in` file) to an output (`.out` file).
 
-
 ```rust
 test_each_file! { for ["in", "out"] in "./resources" => test }
 
@@ -64,7 +63,7 @@ fn test([input, output]: [&str; 2]) {
 }
 ```
 
-The `.in` and `.out` files need to be in the same directory, as shown below:
+Both the `.in` and `.out` files must exist and be located in the same directory, as demonstrated below:
 
 ```
 - resources
