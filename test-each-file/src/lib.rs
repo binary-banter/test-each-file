@@ -1,14 +1,13 @@
-use std::collections::HashSet;
-use proc_macro2::{Ident, TokenStream};
-use std::fs::canonicalize;
-use itertools::Itertools;
 use pathdiff::diff_paths;
+use proc_macro2::{Ident, TokenStream};
+use std::collections::{HashMap, HashSet};
+use std::fs::canonicalize;
+use std::path::{Path, PathBuf};
 
-use syn::{parse_macro_input, Expr, Token, bracketed, LitStr};
 use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use walkdir::WalkDir;
+use syn::{bracketed, parse_macro_input, Expr, LitStr, Token};
 
 struct ForEachFile {
     path: String,
@@ -25,8 +24,14 @@ impl Parse for ForEachFile {
             let content;
             bracketed!(content in input);
 
-            let extensions = Punctuated::<LitStr, Token![,]>::parse_terminated(&content)?.into_iter().map(|s| s.value()).collect::<Vec<_>>();
-            assert!(!extensions.is_empty(), "Expected at least one extension to be given.");
+            let extensions = Punctuated::<LitStr, Token![,]>::parse_terminated(&content)?
+                .into_iter()
+                .map(|s| s.value())
+                .collect::<Vec<_>>();
+            assert!(
+                !extensions.is_empty(),
+                "Expected at least one extension to be given."
+            );
 
             extensions
         } else {
@@ -50,38 +55,48 @@ impl Parse for ForEachFile {
             path,
             prefix,
             function,
-            extensions
+            extensions,
         })
     }
 }
 
-#[proc_macro]
-pub fn test_each_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let parsed = parse_macro_input!(input as ForEachFile);
+#[derive(Default)]
+struct Tree {
+    children: HashMap<PathBuf, Tree>,
+    here: HashSet<PathBuf>,
+}
 
-    let mut tokens = TokenStream::new();
-    let mut files = HashSet::new();
-    for entry in WalkDir::new(&parsed.path).into_iter().filter_map(|e| e.ok()) {
-        let path = entry.path();
-        if path.is_file() {
-            let mut file = path.to_path_buf();
-            if !parsed.extensions.is_empty() {
-                file.set_extension("");
+impl Tree {
+    fn new(base: &Path, ignore_extensions: bool) -> Self {
+        assert!(base.is_dir());
+        let mut tree = Self::default();
+        for entry in base.read_dir().unwrap() {
+            let mut entry = entry.unwrap().path();
+            if entry.is_file() {
+                if ignore_extensions {
+                    entry.set_extension("");
+                }
+                tree.here.insert(entry);
+            } else if entry.is_dir() {
+                tree.children.insert(
+                    entry.as_path().to_path_buf(),
+                    Self::new(entry.as_path(), ignore_extensions),
+                );
+            } else {
+                panic!("Unsupported path.")
             }
-            files.insert(file);
         }
+        tree
     }
+}
 
-    for file in files {
-        let mut diff = diff_paths(&file, &parsed.path).unwrap();
+fn generate_from_tree(tree: &Tree, parsed: &ForEachFile, stream: &mut TokenStream) {
+    for file in &tree.here {
+        let mut diff = diff_paths(file, &parsed.path).unwrap();
         diff.set_extension("");
-        let file_name = diff.components().map(|c| c.as_os_str().to_str().expect("Expected file names to be UTF-8.")).format("_");
+        let file_name = diff.file_name().unwrap().to_str().unwrap();
 
-        let file_name = if let Some(prefix) = &parsed.prefix {
-            format_ident!("{prefix}_{file_name}")
-        } else {
-            format_ident!("{file_name}")
-        };
+        let file_name = format_ident!("{file_name}");
 
         let function = &parsed.function;
 
@@ -104,12 +119,43 @@ pub fn test_each_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream
             quote!([#content])
         };
 
-        tokens.extend(quote! {
+        stream.extend(quote! {
             #[test]
             fn #file_name() {
                 (#function)(#content)
             }
         });
+    }
+
+    for (name, directory) in &tree.children {
+        let mut sub_stream = TokenStream::new();
+        generate_from_tree(directory, parsed, &mut sub_stream);
+        let name = format_ident!("{}", name.file_name().unwrap().to_str().unwrap());
+        stream.extend(quote! {
+            mod #name {
+                use super::*;
+                #sub_stream
+            }
+        })
+    }
+}
+
+#[proc_macro]
+pub fn test_each_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let parsed = parse_macro_input!(input as ForEachFile);
+
+    let mut tokens = TokenStream::new();
+    let files = Tree::new(parsed.path.as_ref(), !parsed.extensions.is_empty());
+    generate_from_tree(&files, &parsed, &mut tokens);
+
+    if let Some(prefix) = parsed.prefix {
+        tokens = quote! {
+            #[cfg(test)]
+            mod #prefix {
+                use super::*;
+                #tokens
+            }
+        }
     }
 
     proc_macro::TokenStream::from(tokens)

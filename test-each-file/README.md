@@ -35,19 +35,24 @@ fn b() {
     test(include_str!("../resources/b.txt"))
 }
 
-#[test]
-fn extra_c() {
-    test(include_str!("../resources/extra/c.txt"))
+mod extra {
+    use super::*;
+    
+    #[test]
+    fn c() {
+        test(include_str!("../resources/extra/c.txt"))
+    }
 }
 ```
 
-## Name prefix
+## Generate submodule
 
-The names of the generated tests can be prefixed with a specified name, by using the `as` keyword. For example:
+The tests can automatically be inserted into a module, by using the `as` keyword. For example:
 ```rust
 test_each_file! { in "./resources" as example => test }
 ```
-The names of the tests will instead be `example_a`, `example_b`, and `example_extra_c`. 
+
+This will wrap the tests above in an additional `mod example { ... }`.
 This feature is useful when `test_each_file!` is used multiple times in a single file, to prevent that the generated tests have the same name.
 
 ## File grouping
@@ -77,6 +82,8 @@ Both the `.in` and `.out` files must exist and be located in the same directory,
 - src
   - main.rs
 ```
+
+Note that `.in` and `.out` are just examples here - any number of unique extensions can be given of arbitrary types.
 
 ## More examples
 

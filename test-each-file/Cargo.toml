@@ -1,6 +1,6 @@
 [package]
 name = "test_each_file"
-version = "0.0.2"
+version = "0.1.0"
 authors = ["Jonathan Brouwer <jonathantbrouwer@gmail.com>", "Julia Dijkstra"]
 description = "Generates a test for each file in a specified directory."
 keywords = ["test", "proc-macro"]
@@ -15,6 +15,5 @@ proc-macro = true
 quote = "1.0.33"
 proc-macro2 = "1.0.67"
 syn = {version="2.0.33", features=["full"]}
-walkdir = "2.4.0"
 pathdiff = "0.2.1"
 itertools = "0.11.0"
