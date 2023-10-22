@@ -1,8 +1,19 @@
-[workspace]
+[package]
+name = "test_each_file"
+version = "0.1.0"
+authors = ["Jonathan Brouwer <jonathantbrouwer@gmail.com>", "Julia Dijkstra"]
+description = "Generates a test for each file in a specified directory."
+keywords = ["test", "proc-macro"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/binary-banter/test-each-file"
 
-resolver = "2"
+[lib]
+proc-macro = true
 
-members = [
-    "test-each-file",
-    "test-each-file-example"
-]
+[dependencies]
+quote = "1.0.33"
+proc-macro2 = "1.0.67"
+syn = {version="2.0.33", features=["full"]}
+pathdiff = "0.2.1"
+itertools = "0.11.0"
