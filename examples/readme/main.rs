@@ -23,4 +23,3 @@ mod tests {
     test_each_file! { in "./examples/readme/resources_simple/" as closure => |c: &str| assert!(c.contains(" ")) }
     test_each_file! { for ["in", "out"] in "./examples/readme/resources_complex/" as example => |[a, b]: [&str; 2]| assert_ne!(a, b) }
 }
-
