@@ -1,5 +1,6 @@
 use pathdiff::diff_paths;
-use proc_macro2::{Ident, TokenStream};
+use proc_macro2::{Ident, Span, TokenStream};
+use proc_macro_error::{abort, abort_call_site, proc_macro_error};
 use std::collections::{HashMap, HashSet};
 use std::fs::canonicalize;
 use std::path::{Path, PathBuf};
@@ -11,37 +12,37 @@ use syn::{bracketed, parse_macro_input, Expr, LitStr, Token};
 
 struct ForEachFile {
     path: String,
-    prefix: Option<Ident>,
+    path_span: Span,
+    module: Option<Ident>,
     function: Expr,
     extensions: Vec<String>,
+    extensions_span: Vec<Span>,
 }
 
 impl Parse for ForEachFile {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let extensions = if input.peek(Token![for]) {
-            input.parse::<Token![for]>()?;
-
+        let extensions = if let Err(_) = input.parse::<Token![for]>() {
+            None
+        } else {
             let content;
             bracketed!(content in input);
 
-            let extensions = Punctuated::<LitStr, Token![,]>::parse_terminated(&content)?
-                .into_iter()
-                .map(|s| s.value())
-                .collect::<Vec<_>>();
-            assert!(
-                !extensions.is_empty(),
-                "Expected at least one extension to be given."
-            );
-
-            extensions
-        } else {
-            vec![]
+            match Punctuated::<LitStr, Token![,]>::parse_separated_nonempty(&content) {
+                Ok(extensions) => Some(extensions),
+                Err(err) => abort!(err.span(), "Expected at least one extension to be given."),
+            }
         };
+        let extensions_span = extensions
+            .as_ref()
+            .map(|e| e.into_iter().map(|s| s.span()).collect::<Vec<_>>());
+        let extensions = extensions.map(|e| e.into_iter().map(|s| s.value()).collect::<Vec<_>>());
 
         input.parse::<Token![in]>()?;
-        let path = input.parse::<LitStr>()?.value();
+        let path = input.parse::<LitStr>()?;
+        let path_span = path.span();
+        let path = path.value();
 
-        let prefix = if input.peek(Token![as]) {
+        let module = if input.peek(Token![as]) {
             input.parse::<Token![as]>()?;
             Some(input.parse::<Ident>()?)
         } else {
@@ -53,9 +54,11 @@ impl Parse for ForEachFile {
 
         Ok(Self {
             path,
-            prefix,
+            path_span,
+            module,
             function,
-            extensions,
+            extensions: extensions.unwrap_or_default(),
+            extensions_span: extensions_span.unwrap_or_default(),
         })
     }
 }
@@ -68,7 +71,10 @@ struct Tree {
 
 impl Tree {
     fn new(base: &Path, ignore_extensions: bool) -> Self {
-        assert!(base.is_dir());
+        if !base.is_dir() {
+            abort_call_site!("Given directory is not a directory");
+        }
+
         let mut tree = Self::default();
         for entry in base.read_dir().unwrap() {
             let mut entry = entry.unwrap().path();
@@ -83,7 +89,7 @@ impl Tree {
                     Self::new(entry.as_path(), ignore_extensions),
                 );
             } else {
-                panic!("Unsupported path.")
+                abort_call_site!(format!("Unsupported path: {:#?}.", entry))
             }
         }
         tree
@@ -141,6 +147,7 @@ fn generate_from_tree(tree: &Tree, parsed: &ForEachFile, stream: &mut TokenStrea
 }
 
 #[proc_macro]
+#[proc_macro_error]
 pub fn test_each_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let parsed = parse_macro_input!(input as ForEachFile);
 
@@ -148,10 +155,10 @@ pub fn test_each_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream
     let files = Tree::new(parsed.path.as_ref(), !parsed.extensions.is_empty());
     generate_from_tree(&files, &parsed, &mut tokens);
 
-    if let Some(prefix) = parsed.prefix {
+    if let Some(module) = parsed.module {
         tokens = quote! {
             #[cfg(test)]
-            mod #prefix {
+            mod #module {
                 use super::*;
                 #tokens
             }
