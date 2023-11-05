@@ -42,8 +42,7 @@ impl Parse for ForEachFile {
         let path_span = path.span();
         let path = path.value();
 
-        let module = if input.peek(Token![as]) {
-            input.parse::<Token![as]>()?;
+        let module = if let Ok(_) = input.parse::<Token![as]>() {
             Some(input.parse::<Ident>()?)
         } else {
             None
@@ -150,6 +149,10 @@ fn generate_from_tree(tree: &Tree, parsed: &ForEachFile, stream: &mut TokenStrea
 #[proc_macro_error]
 pub fn test_each_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let parsed = parse_macro_input!(input as ForEachFile);
+
+    if !Path::new(&parsed.path).is_dir() {
+        abort!(parsed.path_span, "Given directory does not exist");
+    }
 
     let mut tokens = TokenStream::new();
     let files = Tree::new(parsed.path.as_ref(), !parsed.extensions.is_empty());
