@@ -71,10 +71,6 @@ struct Tree {
 
 impl Tree {
     fn new(base: &Path, ignore_extensions: bool) -> Self {
-        if !base.is_dir() {
-            abort_call_site!("Given directory is not a directory");
-        }
-
         let mut tree = Self::default();
         for entry in base.read_dir().unwrap() {
             let mut entry = entry.unwrap().path();
