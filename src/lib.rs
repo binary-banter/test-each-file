@@ -1,3 +1,4 @@
+#![doc = include_str!("../README.md")]
 use pathdiff::diff_paths;
 use proc_macro2::{Ident, Span, TokenStream};
 use proc_macro_error::{abort, abort_call_site, proc_macro_error};
@@ -16,7 +17,7 @@ struct ForEachFile {
     module: Option<Ident>,
     function: Expr,
     extensions: Vec<String>,
-    extensions_span: Vec<Span>,
+    _extensions_span: Vec<Span>,
 }
 
 impl Parse for ForEachFile {
@@ -57,7 +58,7 @@ impl Parse for ForEachFile {
             module,
             function,
             extensions: extensions.unwrap_or_default(),
-            extensions_span: extensions_span.unwrap_or_default(),
+            _extensions_span: extensions_span.unwrap_or_default(),
         })
     }
 }
@@ -145,6 +146,9 @@ fn generate_from_tree(tree: &Tree, parsed: &ForEachFile, stream: &mut TokenStrea
     }
 }
 
+/// Easily generate tests for files in a specified directory for comprehensive testing.
+///
+/// See crate level documentation for details.
 #[proc_macro]
 #[proc_macro_error]
 pub fn test_each_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
