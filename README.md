@@ -1,6 +1,8 @@
 # Test Each File
 
-[![github](https://img.shields.io/badge/github-8da0cb?style=for-the-badge&labelColor=555555&logo=github)](https://github.com/binary-banter/test-each-file)&ensp;[![crates-io](https://img.shields.io/badge/crates.io-fc8d62?style=for-the-badge&labelColor=555555&logo=rust)](https://crates.io/crates/test_each_file)&ensp;[![docs-rs](https://img.shields.io/badge/docs.rs-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs)](https://docs.rs/test_each_file)
+[![github](https://img.shields.io/badge/github-8da0cb?style=for-the-badge&labelColor=555555&logo=github)](https://github.com/binary-banter/test-each-file)
+&ensp;[![crates-io](https://img.shields.io/badge/crates.io-fc8d62?style=for-the-badge&labelColor=555555&logo=rust)](https://crates.io/crates/test_each_file)
+&ensp;[![docs-rs](https://img.shields.io/badge/docs.rs-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs)](https://docs.rs/test_each_file)
 
 Easily generate tests for files in a specified directory for comprehensive testing.
 
@@ -42,7 +44,7 @@ fn b() {
 
 mod extra {
     use super::*;
-    
+
     #[test]
     fn c() {
         test(include_str!("../resources/extra/c.txt"))
@@ -59,12 +61,14 @@ test_each_file! { in "./resources" as example => test }
 ```
 
 This will wrap the tests above in an additional `mod example { ... }`.
-This feature is useful when `test_each_file!` is used multiple times in a single file, to prevent that the generated tests have the same name.
+This feature is useful when `test_each_file!` is used multiple times in a single file, to prevent that the generated
+tests have the same name.
 
 ## File grouping
 
 Sometimes it may be preferable to write a test that takes the contents of multiple files as input.
-A common use-case for this is testing a function that performs a transformation from a given input (`.in` file) to an output (`.out` file).
+A common use-case for this is testing a function that performs a transformation from a given input (`.in` file) to an
+output (`.out` file).
 
 ```rust
 test_each_file! { for ["in", "out"] in "./resources" => test }

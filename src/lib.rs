@@ -1,6 +1,6 @@
 #![doc = include_str!("../README.md")]
 use pathdiff::diff_paths;
-use proc_macro2::{Ident, Span, TokenStream};
+use proc_macro2::{Ident, TokenStream};
 use proc_macro_error::{abort, abort_call_site, proc_macro_error};
 use std::collections::{HashMap, HashSet};
 use std::fs::canonicalize;
@@ -12,53 +12,64 @@ use syn::punctuated::Punctuated;
 use syn::{bracketed, parse_macro_input, Expr, LitStr, Token};
 
 struct ForEachFile {
-    path: String,
-    path_span: Span,
+    path: LitStr,
     module: Option<Ident>,
     function: Expr,
     extensions: Vec<String>,
-    _extensions_span: Vec<Span>,
 }
 
 impl Parse for ForEachFile {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let extensions = if let Err(_) = input.parse::<Token![for]>() {
-            None
-        } else {
-            let content;
-            bracketed!(content in input);
+        // Parse extensions if the keyword `for` is used. Aborts if no extensions are given.
+        let extensions = input
+            .parse::<Token![for]>()
+            .and_then(|_| {
+                let content;
+                bracketed!(content in input);
 
-            match Punctuated::<LitStr, Token![,]>::parse_separated_nonempty(&content) {
-                Ok(extensions) => Some(extensions),
-                Err(err) => abort!(err.span(), "Expected at least one extension to be given."),
-            }
-        };
-        let extensions_span = extensions
-            .as_ref()
-            .map(|e| e.into_iter().map(|s| s.span()).collect::<Vec<_>>());
-        let extensions = extensions.map(|e| e.into_iter().map(|s| s.value()).collect::<Vec<_>>());
+                match Punctuated::<LitStr, Token![,]>::parse_separated_nonempty(&content) {
+                    Ok(extensions) => Ok(extensions
+                        .into_iter()
+                        .map(|extension| extension.value())
+                        .collect()),
+                    Err(e) => abort!(e.span(), "Expected at least one extension to be given."),
+                }
+            })
+            .unwrap_or_default();
 
-        input.parse::<Token![in]>()?;
-        let path = input.parse::<LitStr>()?;
-        let path_span = path.span();
-        let path = path.value();
-
-        let module = if let Ok(_) = input.parse::<Token![as]>() {
-            Some(input.parse::<Ident>()?)
-        } else {
-            None
+        // Parse the path to the tests.
+        if let Err(e) = input.parse::<Token![in]>() {
+            abort!(e.span(), "Expected the keyword `in` before the path.");
         };
 
-        input.parse::<Token![=>]>()?;
-        let function = input.parse::<Expr>()?;
+        let path = match input.parse::<LitStr>() {
+            Ok(path) => path,
+            Err(e) => abort!(e.span(), "Expected a path after the keyword 'in'."),
+        };
+
+        let module = input
+            .parse::<Token![as]>()
+            .and_then(|_| match input.parse::<Ident>() {
+                Ok(module) => Ok(module),
+                Err(e) => abort!(e.span(), "Expected a module to be given."),
+            })
+            .ok();
+
+        // Parse function to call.
+        if let Err(e) = input.parse::<Token![=>]>() {
+            abort!(e.span(), "Expected `=>` before the function to call.");
+        };
+
+        let function = match input.parse::<Expr>() {
+            Ok(function) => function,
+            Err(e) => abort!(e.span(), "Expected a function to call after `=>`."),
+        };
 
         Ok(Self {
             path,
-            path_span,
             module,
             function,
-            extensions: extensions.unwrap_or_default(),
-            _extensions_span: extensions_span.unwrap_or_default(),
+            extensions,
         })
     }
 }
@@ -94,7 +105,7 @@ impl Tree {
 
 fn generate_from_tree(tree: &Tree, parsed: &ForEachFile, stream: &mut TokenStream) {
     for file in &tree.here {
-        let mut diff = diff_paths(file, &parsed.path).unwrap();
+        let mut diff = diff_paths(file, parsed.path.value()).unwrap();
         diff.set_extension("");
         let file_name = diff.file_name().unwrap().to_str().unwrap();
 
@@ -138,7 +149,7 @@ fn generate_from_tree(tree: &Tree, parsed: &ForEachFile, stream: &mut TokenStrea
                 use super::*;
                 #sub_stream
             }
-        })
+        });
     }
 }
 
@@ -150,12 +161,12 @@ fn generate_from_tree(tree: &Tree, parsed: &ForEachFile, stream: &mut TokenStrea
 pub fn test_each_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let parsed = parse_macro_input!(input as ForEachFile);
 
-    if !Path::new(&parsed.path).is_dir() {
-        abort!(parsed.path_span, "Given directory does not exist");
+    if !Path::new(&parsed.path.value()).is_dir() {
+        abort!(parsed.path.span(), "Given directory does not exist");
     }
 
     let mut tokens = TokenStream::new();
-    let files = Tree::new(parsed.path.as_ref(), !parsed.extensions.is_empty());
+    let files = Tree::new(parsed.path.value().as_ref(), !parsed.extensions.is_empty());
     generate_from_tree(&files, &parsed, &mut tokens);
 
     if let Some(module) = parsed.module {
