@@ -1,8 +1,13 @@
 # Test Each File
 
+[![github](https://img.shields.io/badge/github-8da0cb?style=for-the-badge&labelColor=555555&logo=github)](https://github.com/binary-banter/test-each-file)
+&ensp;[![crates-io](https://img.shields.io/badge/crates.io-fc8d62?style=for-the-badge&labelColor=555555&logo=rust)](https://crates.io/crates/test_each_file)
+&ensp;[![docs-rs](https://img.shields.io/badge/docs.rs-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs)](https://docs.rs/test_each_file)
+
 Easily generate tests for files in a specified directory for comprehensive testing.
 
 A simple example of the macro is shown below:
+
 ```rust
 test_each_file! { in "./resources" => test }
 
@@ -12,7 +17,8 @@ fn test(content: &str) {
 ```
 
 Given the following file structure:
-```
+
+```txt
 - resources
   - a.txt
   - b.txt
@@ -23,6 +29,7 @@ Given the following file structure:
 ```
 
 The macro expands to:
+
 ```rust
 #[test]
 fn a() {
@@ -37,7 +44,7 @@ fn b() {
 
 mod extra {
     use super::*;
-    
+
     #[test]
     fn c() {
         test(include_str!("../resources/extra/c.txt"))
@@ -48,17 +55,20 @@ mod extra {
 ## Generate submodule
 
 The tests can automatically be inserted into a module, by using the `as` keyword. For example:
+
 ```rust
 test_each_file! { in "./resources" as example => test }
 ```
 
 This will wrap the tests above in an additional `mod example { ... }`.
-This feature is useful when `test_each_file!` is used multiple times in a single file, to prevent that the generated tests have the same name.
+This feature is useful when `test_each_file!` is used multiple times in a single file, to prevent that the generated
+tests have the same name.
 
 ## File grouping
 
 Sometimes it may be preferable to write a test that takes the contents of multiple files as input.
-A common use-case for this is testing a function that performs a transformation from a given input (`.in` file) to an output (`.out` file).
+A common use-case for this is testing a function that performs a transformation from a given input (`.in` file) to an
+output (`.out` file).
 
 ```rust
 test_each_file! { for ["in", "out"] in "./resources" => test }
@@ -70,7 +80,7 @@ fn test([input, output]: [&str; 2]) {
 
 Both the `.in` and `.out` files must exist and be located in the same directory, as demonstrated below:
 
-```
+```txt
 - resources
   - a.in
   - a.out
@@ -88,11 +98,13 @@ Note that `.in` and `.out` are just examples here - any number of unique extensi
 ## More examples
 
 The expression that is called on each file can also be a closure, for example:
+
 ```rust
 test_each_file! { in "./resources" => |c: &str| assert!(c.contains("Hello World")) }
 ```
 
 All the options above can be combined, for example:
+
 ```rust
 test_each_file! { for ["in", "out"] in "./resources" as example => |[a, b]: [&str; 2]| assert_eq!(a, b) }
 ```
