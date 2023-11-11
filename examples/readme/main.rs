@@ -27,16 +27,17 @@ mod tests {
 
     mod path {
         use std::fs::read_to_string;
+        use std::path::Path;
         use test_each_file::test_each_path;
 
-        fn simple(input: &str) {
+        fn simple(input: &Path) {
             assert!(read_to_string(input)
                 .unwrap()
                 .split_whitespace()
                 .all(|n| n.parse::<usize>().is_ok()));
         }
 
-        fn complex([input, output]: [&str; 2]) {
+        fn complex([input, output]: [&Path; 2]) {
             assert_eq!(
                 read_to_string(input)
                     .unwrap()

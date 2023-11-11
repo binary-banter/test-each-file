@@ -95,6 +95,20 @@ Both the `.in` and `.out` files must exist and be located in the same directory,
 
 Note that `.in` and `.out` are just examples here - any number of unique extensions can be given of arbitrary types.
 
+## Test each path
+
+A similar macro exists for passing all the paths in a given directory. This macro behaves identically to `test_each_file!`, 
+except that it passes the paths of the files rather than the contents. It is usually preferable to use `test_each_file!`,
+because it includes the files in the binary, whereas the paths still need to be there during run-time for `test_each_path!`.
+
+```rust
+test_each_path! { for ["in", "out"] in "./resources" => test }
+
+fn test([input, output]: [&Path; 2]) {
+    // Make assertions on the path of `input` and `output` here.
+}
+```
+
 ## More examples
 
 The expression that is called on each file can also be a closure, for example:

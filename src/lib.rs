@@ -8,14 +8,14 @@ use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::{bracketed, parse_macro_input, Expr, LitStr, Token};
 
-struct ForEachArgs {
+struct TestEachArgs {
     path: LitStr,
     module: Option<Ident>,
     function: Expr,
     extensions: Vec<String>,
 }
 
-impl Parse for ForEachArgs {
+impl Parse for TestEachArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         // Optionally parse extensions if the keyword `for` is used. Aborts if none are given.
         let extensions = input
@@ -108,7 +108,7 @@ enum Type {
 
 fn generate_from_tree(
     tree: &Tree,
-    parsed: &ForEachArgs,
+    parsed: &TestEachArgs,
     stream: &mut TokenStream,
     invocation_type: &Type,
 ) {
@@ -123,7 +123,7 @@ fn generate_from_tree(
 
             match invocation_type {
                 Type::File => quote!(include_str!(#input)),
-                Type::Path => quote!(#input),
+                Type::Path => quote!(std::path::Path::new(#input)),
             }
         } else {
             let mut arguments = TokenStream::new();
@@ -134,7 +134,7 @@ fn generate_from_tree(
 
                 arguments.extend(match invocation_type {
                     Type::File => quote!(include_str!(#input),),
-                    Type::Path => quote!(#input,),
+                    Type::Path => quote!(std::path::Path::new(#input),),
                 });
             }
 
@@ -163,7 +163,7 @@ fn generate_from_tree(
 }
 
 fn test_each(input: proc_macro::TokenStream, invocation_type: &Type) -> proc_macro::TokenStream {
-    let parsed = parse_macro_input!(input as ForEachArgs);
+    let parsed = parse_macro_input!(input as TestEachArgs);
 
     if !Path::new(&parsed.path.value()).is_dir() {
         abort!(parsed.path.span(), "Given directory does not exist");
