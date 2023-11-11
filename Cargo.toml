@@ -15,5 +15,4 @@ proc-macro = true
 quote = "1.0.33"
 proc-macro2 = "1.0.69"
 syn = { version = "2.0.39", features = ["full"] }
-pathdiff = "0.2.1"
 proc-macro-error = "1.0.4"

@@ -1,26 +1,23 @@
 #![doc = include_str!("../README.md")]
-use pathdiff::diff_paths;
 use proc_macro2::{Ident, TokenStream};
 use proc_macro_error::{abort, abort_call_site, proc_macro_error};
-use std::collections::{HashMap, HashSet};
-use std::fs::canonicalize;
-use std::path::{Path, PathBuf};
-
 use quote::{format_ident, quote};
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::{bracketed, parse_macro_input, Expr, LitStr, Token};
 
-struct ForEachFile {
+struct ForEachArgs {
     path: LitStr,
     module: Option<Ident>,
     function: Expr,
     extensions: Vec<String>,
 }
 
-impl Parse for ForEachFile {
+impl Parse for ForEachArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        // Parse extensions if the keyword `for` is used. Aborts if no extensions are given.
+        // Optionally parse extensions if the keyword `for` is used. Aborts if none are given.
         let extensions = input
             .parse::<Token![for]>()
             .and_then(|_| {
@@ -47,6 +44,7 @@ impl Parse for ForEachFile {
             Err(e) => abort!(e.span(), "Expected a path after the keyword 'in'."),
         };
 
+        // Optionally parse module to put the tests in if the keyword `as` is used.
         let module = input
             .parse::<Token![as]>()
             .and_then(|_| match input.parse::<Ident>() {
@@ -103,46 +101,57 @@ impl Tree {
     }
 }
 
-fn generate_from_tree(tree: &Tree, parsed: &ForEachFile, stream: &mut TokenStream) {
-    for file in &tree.here {
-        let mut diff = diff_paths(file, parsed.path.value()).unwrap();
-        diff.set_extension("");
-        let file_name = diff.file_name().unwrap().to_str().unwrap();
+enum Type {
+    File,
+    Path,
+}
 
-        let file_name = format_ident!("{file_name}");
+fn generate_from_tree(
+    tree: &Tree,
+    parsed: &ForEachArgs,
+    stream: &mut TokenStream,
+    invocation_type: &Type,
+) {
+    for file in &tree.here {
+        let file_name = format_ident!("{}", file.file_stem().unwrap().to_str().unwrap());
 
         let function = &parsed.function;
 
-        let content = if parsed.extensions.is_empty() {
-            let file = canonicalize(file).unwrap();
-            let file = file.to_str().unwrap();
-            quote!(include_str!(#file))
+        let arguments = if parsed.extensions.is_empty() {
+            let input = file.canonicalize().unwrap();
+            let input = input.to_str().unwrap();
+
+            match invocation_type {
+                Type::File => quote!(include_str!(#input)),
+                Type::Path => quote!(#input),
+            }
         } else {
-            let mut content = TokenStream::new();
+            let mut arguments = TokenStream::new();
 
-            for ext in &parsed.extensions {
-                let mut file = file.clone();
-                file.set_extension(ext);
-                let file = canonicalize(file).unwrap();
-                let file = file.to_str().unwrap();
+            for extension in &parsed.extensions {
+                let input = file.with_extension(extension).canonicalize().unwrap();
+                let input = input.to_str().unwrap();
 
-                content.extend(quote!(include_str!(#file),));
+                arguments.extend(match invocation_type {
+                    Type::File => quote!(include_str!(#input),),
+                    Type::Path => quote!(#input,),
+                });
             }
 
-            quote!([#content])
+            quote!([#arguments])
         };
 
         stream.extend(quote! {
             #[test]
             fn #file_name() {
-                (#function)(#content)
+                (#function)(#arguments)
             }
         });
     }
 
     for (name, directory) in &tree.children {
         let mut sub_stream = TokenStream::new();
-        generate_from_tree(directory, parsed, &mut sub_stream);
+        generate_from_tree(directory, parsed, &mut sub_stream, invocation_type);
         let name = format_ident!("{}", name.file_name().unwrap().to_str().unwrap());
         stream.extend(quote! {
             mod #name {
@@ -153,13 +162,8 @@ fn generate_from_tree(tree: &Tree, parsed: &ForEachFile, stream: &mut TokenStrea
     }
 }
 
-/// Easily generate tests for files in a specified directory for comprehensive testing.
-///
-/// See crate level documentation for details.
-#[proc_macro]
-#[proc_macro_error]
-pub fn test_each_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let parsed = parse_macro_input!(input as ForEachFile);
+fn test_each(input: proc_macro::TokenStream, invocation_type: &Type) -> proc_macro::TokenStream {
+    let parsed = parse_macro_input!(input as ForEachArgs);
 
     if !Path::new(&parsed.path.value()).is_dir() {
         abort!(parsed.path.span(), "Given directory does not exist");
@@ -167,7 +171,7 @@ pub fn test_each_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream
 
     let mut tokens = TokenStream::new();
     let files = Tree::new(parsed.path.value().as_ref(), !parsed.extensions.is_empty());
-    generate_from_tree(&files, &parsed, &mut tokens);
+    generate_from_tree(&files, &parsed, &mut tokens, invocation_type);
 
     if let Some(module) = parsed.module {
         tokens = quote! {
@@ -180,4 +184,22 @@ pub fn test_each_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream
     }
 
     proc_macro::TokenStream::from(tokens)
+}
+
+/// Easily generate tests for files in a specified directory for comprehensive testing.
+///
+/// See crate level documentation for details.
+#[proc_macro]
+#[proc_macro_error]
+pub fn test_each_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    test_each(input, &Type::File)
+}
+
+/// Easily generate tests for paths in a specified directory for comprehensive testing.
+///
+/// See crate level documentation for details.
+#[proc_macro]
+#[proc_macro_error]
+pub fn test_each_path(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    test_each(input, &Type::Path)
 }
