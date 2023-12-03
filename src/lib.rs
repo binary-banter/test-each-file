@@ -79,19 +79,31 @@ struct Tree {
 }
 
 impl Tree {
-    fn new(base: &Path, ignore_extensions: bool) -> Self {
+    fn new(base: &Path, extensions: &[String]) -> Self {
         let mut tree = Self::default();
         for entry in base.read_dir().unwrap() {
             let mut entry = entry.unwrap().path();
             if entry.is_file() {
-                if ignore_extensions {
+                if !extensions.is_empty() {
+                    // Ignore file if it does not have one extension.
+                    let Some(extension) = entry.extension() else {
+                        continue;
+                    };
+                    // Ignore the file if the extension is not contained in the provided extensions.
+                    if !extensions
+                        .iter()
+                        .any(|test_extension| test_extension == extension.to_str().unwrap())
+                    {
+                        continue;
+                    }
+                    // Trim extension.
                     entry.set_extension("");
                 }
                 tree.here.insert(entry);
             } else if entry.is_dir() {
                 tree.children.insert(
                     entry.as_path().to_path_buf(),
-                    Self::new(entry.as_path(), ignore_extensions),
+                    Self::new(entry.as_path(), extensions),
                 );
             } else {
                 abort_call_site!(format!("Unsupported path: {:#?}.", entry))
@@ -130,6 +142,12 @@ fn generate_from_tree(
 
             for extension in &parsed.extensions {
                 let input = file.with_extension(extension).canonicalize().unwrap();
+                if !input.exists() {
+                    abort_call_site!(format!(
+                        "Expected file {:?} with extension {}, but it does not exist.",
+                        file, extension
+                    ))
+                }
                 let input = input.to_str().unwrap();
 
                 arguments.extend(match invocation_type {
@@ -170,7 +188,7 @@ fn test_each(input: proc_macro::TokenStream, invocation_type: &Type) -> proc_mac
     }
 
     let mut tokens = TokenStream::new();
-    let files = Tree::new(parsed.path.value().as_ref(), !parsed.extensions.is_empty());
+    let files = Tree::new(parsed.path.value().as_ref(), &parsed.extensions);
     generate_from_tree(&files, &parsed, &mut tokens, invocation_type);
 
     if let Some(module) = parsed.module {
