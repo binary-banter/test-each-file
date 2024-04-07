@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::{bracketed, parse_macro_input, Expr, LitStr, Token};
+use unicode_ident::is_xid_continue;
 
 struct TestEachArgs {
     path: LitStr,
@@ -118,20 +119,41 @@ enum Type {
     Path,
 }
 
+/// Sanitize a string so that it can be a substring of a valid identifier.
+///
+/// This function does not guarantee that the first character of the output is a valid start of an
+/// identifier, nor that the output is not a reserved word; the caller should prefix the output of
+/// this function as appropriate to yield a valid identifier.
+fn sanitize_ident(input: &str) -> String {
+    input
+        .chars()
+        .map(|c| if is_xid_continue(c) { c } else { '_' })
+        .collect()
+}
+
 fn generate_from_tree(
     tree: &Tree,
     parsed: &TestEachArgs,
     stream: &mut TokenStream,
     invocation_type: &Type,
 ) {
-    for file in &tree.here {
-        let file_name = format_ident!("{}", file.file_stem().unwrap().to_str().unwrap());
+    // println!("start");
+    for (i, file) in tree.here.iter().enumerate() {
+        // println!("file = {:?}", file);
+        let file_name = format_ident!(
+            "file_{}_{}",
+            i,
+            sanitize_ident(file.file_stem().unwrap().to_str().unwrap())
+        );
+        // let file_name = format!("{}", file.file_stem().unwrap().to_str().unwrap());
+        // println!("file_name = {:?}", file_name);
 
         let function = &parsed.function;
 
-        let arguments = if parsed.extensions.is_empty() {
+        let arguments: TokenStream = if parsed.extensions.is_empty() {
             let input = file.canonicalize().unwrap();
             let input = input.to_str().unwrap();
+            // println!("input = {:?}", input);
 
             match invocation_type {
                 Type::File => quote!(include_str!(#input)),
@@ -159,6 +181,14 @@ fn generate_from_tree(
             quote!([#arguments])
         };
 
+        // println!(
+        //     "{}",
+        //     quote! {
+        //         fn #file_name() {
+        //             (#function)(#arguments)
+        //         }
+        //     }
+        // );
         stream.extend(quote! {
             #[test]
             fn #file_name() {
@@ -167,10 +197,14 @@ fn generate_from_tree(
         });
     }
 
-    for (name, directory) in &tree.children {
+    for (i, (name, directory)) in tree.children.iter().enumerate() {
         let mut sub_stream = TokenStream::new();
         generate_from_tree(directory, parsed, &mut sub_stream, invocation_type);
-        let name = format_ident!("{}", name.file_name().unwrap().to_str().unwrap());
+        let name = format_ident!(
+            "dir_{}_{}",
+            i,
+            sanitize_ident(name.file_name().unwrap().to_str().unwrap())
+        );
         stream.extend(quote! {
             mod #name {
                 use super::*;
