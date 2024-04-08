@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::{bracketed, parse_macro_input, Expr, LitStr, Token};
-use unicode_ident::is_xid_continue;
+use unicode_ident::{is_xid_continue, is_xid_start};
 
 struct TestEachArgs {
     path: LitStr,
@@ -119,16 +119,35 @@ enum Type {
     Path,
 }
 
-/// Sanitize a string so that it can be a substring of a valid identifier.
-///
-/// This function does not guarantee that the first character of the output is a valid start of an
-/// identifier, nor that the output is not a reserved word; the caller should prefix the output of
-/// this function as appropriate to yield a valid identifier.
-fn sanitize_ident(input: &str) -> String {
-    input
+/// Sanitize a string so that it can be a valid identifier.
+/// Replaces invalid characters with underscores
+fn sanitize_ident(input: &str) -> Ident {
+    let name: String = input
         .chars()
         .map(|c| if is_xid_continue(c) { c } else { '_' })
-        .collect()
+        .collect();
+
+    if !is_xid_start(name.chars().next().expect("Name is not empty")) {
+        format_ident!("test_{name}")
+    } else {
+        format_ident!("{name}")
+    }
+}
+
+/// Given a starting name and a map `name -> how often the name appeared`, generate a new name that is unique in the `taken_names` set
+fn generate_name(starting_name: Ident, taken_names: &mut HashSet<Ident>) -> Ident {
+    if taken_names.insert(starting_name.clone()) {
+        return starting_name;
+    }
+
+    for i in 2.. {
+        let new_name = format_ident!("{starting_name}_{i}");
+        if taken_names.insert(new_name.clone()) {
+            return new_name;
+        }
+    }
+
+    unreachable!()
 }
 
 fn generate_from_tree(
@@ -137,23 +156,33 @@ fn generate_from_tree(
     stream: &mut TokenStream,
     invocation_type: &Type,
 ) {
-    // println!("start");
-    for (i, file) in tree.here.iter().enumerate() {
-        // println!("file = {:?}", file);
-        let file_name = format_ident!(
-            "file_{}_{}",
-            i,
-            sanitize_ident(file.file_stem().unwrap().to_str().unwrap())
-        );
-        // let file_name = format!("{}", file.file_stem().unwrap().to_str().unwrap());
-        // println!("file_name = {:?}", file_name);
+    let mut taken_names = HashSet::new();
+
+    for (name, directory) in tree.children.iter() {
+        let file_name = name.file_name().unwrap().to_str().unwrap();
+        let file_name = sanitize_ident(file_name);
+        let file_name = generate_name(file_name, &mut taken_names);
+
+        let mut sub_stream = TokenStream::new();
+        generate_from_tree(directory, parsed, &mut sub_stream, invocation_type);
+        stream.extend(quote! {
+            mod #file_name {
+                use super::*;
+                #sub_stream
+            }
+        });
+    }
+
+    for file in tree.here.iter() {
+        let file_name = file.file_stem().unwrap().to_str().unwrap();
+        let file_name = sanitize_ident(file_name);
+        let file_name = generate_name(file_name, &mut taken_names);
 
         let function = &parsed.function;
 
         let arguments: TokenStream = if parsed.extensions.is_empty() {
             let input = file.canonicalize().unwrap();
             let input = input.to_str().unwrap();
-            // println!("input = {:?}", input);
 
             match invocation_type {
                 Type::File => quote!(include_str!(#input)),
@@ -181,34 +210,10 @@ fn generate_from_tree(
             quote!([#arguments])
         };
 
-        // println!(
-        //     "{}",
-        //     quote! {
-        //         fn #file_name() {
-        //             (#function)(#arguments)
-        //         }
-        //     }
-        // );
         stream.extend(quote! {
             #[test]
             fn #file_name() {
                 (#function)(#arguments)
-            }
-        });
-    }
-
-    for (i, (name, directory)) in tree.children.iter().enumerate() {
-        let mut sub_stream = TokenStream::new();
-        generate_from_tree(directory, parsed, &mut sub_stream, invocation_type);
-        let name = format_ident!(
-            "dir_{}_{}",
-            i,
-            sanitize_ident(name.file_name().unwrap().to_str().unwrap())
-        );
-        stream.extend(quote! {
-            mod #name {
-                use super::*;
-                #sub_stream
             }
         });
     }

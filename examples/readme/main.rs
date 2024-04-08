@@ -56,4 +56,12 @@ mod tests {
         test_each_path! { in "./examples/readme/resources_simple/" as simple => simple}
         test_each_path! { for ["in", "out"] in "./examples/readme/resources_complex/" as complex => complex}
     }
+
+    mod duplicate_names {
+        use test_each_file::test_each_file;
+
+        fn empty(_input: &str) {}
+
+        test_each_file! { in "./examples/readme/duplicate_names/" => empty}
+    }
 }
