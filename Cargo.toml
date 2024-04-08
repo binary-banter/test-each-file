@@ -17,3 +17,4 @@ quote = "1.0.33"
 proc-macro2 = "1.0.69"
 syn = { version = "2.0.39", features = ["full"] }
 proc-macro-error = "1.0.4"
+unicode-ident = "1.0.12"
