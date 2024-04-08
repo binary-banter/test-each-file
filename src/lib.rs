@@ -156,12 +156,11 @@ fn generate_from_tree(
     stream: &mut TokenStream,
     invocation_type: &Type,
 ) {
-    let mut taken_names = HashSet::new();
-
+    let mut taken_names_folders = HashSet::new();
     for (name, directory) in tree.children.iter() {
         let file_name = name.file_name().unwrap().to_str().unwrap();
         let file_name = sanitize_ident(file_name);
-        let file_name = generate_name(file_name, &mut taken_names);
+        let file_name = generate_name(file_name, &mut taken_names_folders);
 
         let mut sub_stream = TokenStream::new();
         generate_from_tree(directory, parsed, &mut sub_stream, invocation_type);
@@ -173,10 +172,11 @@ fn generate_from_tree(
         });
     }
 
+    let mut taken_names_files = HashSet::new();
     for file in tree.here.iter() {
         let file_name = file.file_stem().unwrap().to_str().unwrap();
         let file_name = sanitize_ident(file_name);
-        let file_name = generate_name(file_name, &mut taken_names);
+        let file_name = generate_name(file_name, &mut taken_names_files);
 
         let function = &parsed.function;
 

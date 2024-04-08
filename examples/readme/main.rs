@@ -65,3 +65,4 @@ mod tests {
         test_each_file! { in "./examples/readme/duplicate_names/" => empty}
     }
 }
+ 
