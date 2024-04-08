@@ -134,7 +134,7 @@ fn sanitize_ident(input: &str) -> Ident {
     }
 }
 
-/// Given a starting name and a map `name -> how often the name appeared`, generate a new name that is unique in the `taken_names` set
+/// Given a starting name and a set of taken names, generate a new name that is unique in the `taken_names` set
 fn generate_name(starting_name: Ident, taken_names: &mut HashSet<Ident>) -> Ident {
     if taken_names.insert(starting_name.clone()) {
         return starting_name;
