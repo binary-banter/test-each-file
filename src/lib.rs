@@ -207,12 +207,6 @@ fn generate_from_tree(
                     Ok(path) => path,
                     Err(e) => return Err(format!("Failed to read expected file {}.{extension}: {e}", file.display())),
                 };
-                if !input.exists() {
-                    return Err(format!(
-                        "Expected file {:?}.{}, but it does not exist.",
-                        file, extension
-                    ))
-                }
                 let input = input.to_str().unwrap();
 
                 arguments.extend(match invocation_type {
