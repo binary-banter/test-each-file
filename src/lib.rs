@@ -166,7 +166,7 @@ fn generate_from_tree(
     parsed: &TestEachArgs,
     stream: &mut TokenStream,
     invocation_type: &Type,
-) {
+) -> Result<(), String> {
     let mut taken_names_folders = HashSet::new();
     for (name, directory) in tree.children.iter() {
         let file_name = name.file_name().unwrap().to_str().unwrap();
@@ -174,7 +174,7 @@ fn generate_from_tree(
         let file_name = generate_name(file_name, &mut taken_names_folders);
 
         let mut sub_stream = TokenStream::new();
-        generate_from_tree(directory, parsed, &mut sub_stream, invocation_type);
+        generate_from_tree(directory, parsed, &mut sub_stream, invocation_type)?;
         stream.extend(quote! {
             mod #file_name {
                 use super::*;
@@ -203,10 +203,13 @@ fn generate_from_tree(
             let mut arguments = TokenStream::new();
 
             for extension in &parsed.extensions {
-                let input = file.with_extension(extension).canonicalize().unwrap();
+                let input = match file.with_extension(extension).canonicalize() {
+                    Ok(path) => path,
+                    Err(e) => return Err(format!("Failed to read expected file {}.{extension}: {e}", file.display())),
+                };
                 if !input.exists() {
-                    abort_call_site!(format!(
-                        "Expected file {:?} with extension {}, but it does not exist.",
+                    return Err(format!(
+                        "Expected file {:?}.{}, but it does not exist.",
                         file, extension
                     ))
                 }
@@ -228,6 +231,8 @@ fn generate_from_tree(
             }
         });
     }
+
+    Ok(())
 }
 
 fn test_each(input: proc_macro::TokenStream, invocation_type: &Type) -> proc_macro::TokenStream {
@@ -247,8 +252,6 @@ fn test_each(input: proc_macro::TokenStream, invocation_type: &Type) -> proc_mac
     if let Err(e) = generate_from_tree(&files, &parsed, &mut tokens, invocation_type) {
         abort_token_stream!(parsed.path.span(), e)
     }
-    let files = Tree::new(parsed.path.value().as_ref(), &parsed.extensions);
-    generate_from_tree(&files, &parsed, &mut tokens, invocation_type);
 
     if let Some(module) = parsed.module {
         tokens = quote! {
