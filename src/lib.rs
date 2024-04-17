@@ -6,8 +6,9 @@ use std::path::{Path, PathBuf};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::{bracketed, parse_macro_input, Expr, LitStr, Token};
+use unicode_ident::{is_xid_continue, is_xid_start};
 
-struct ForEachArgs {
+struct TestEachArgs {
     path: LitStr,
     module: Option<Ident>,
     function: Expr,
@@ -26,7 +27,7 @@ macro_rules! abort_token_stream {
     };
 }
 
-impl Parse for ForEachArgs {
+impl Parse for TestEachArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         // Optionally parse extensions if the keyword `for` is used. Aborts if none are given.
         let extensions = input
@@ -90,19 +91,31 @@ struct Tree {
 }
 
 impl Tree {
-    fn new(base: &Path, ignore_extensions: bool) -> Result<Self, String> {
+    fn new(base: &Path, extensions: &[String]) -> Result<Self, String> {
         let mut tree = Self::default();
         for entry in base.read_dir().unwrap() {
             let mut entry = entry.unwrap().path();
             if entry.is_file() {
-                if ignore_extensions {
+                if !extensions.is_empty() {
+                    // Ignore file if it does not have one extension.
+                    let Some(extension) = entry.extension() else {
+                        continue;
+                    };
+                    // Ignore the file if the extension is not contained in the provided extensions.
+                    if !extensions
+                        .iter()
+                        .any(|test_extension| test_extension == extension.to_str().unwrap())
+                    {
+                        continue;
+                    }
+                    // Trim extension.
                     entry.set_extension("");
                 }
                 tree.here.insert(entry);
             } else if entry.is_dir() {
                 tree.children.insert(
                     entry.as_path().to_path_buf(),
-                    Self::new(entry.as_path(), ignore_extensions)?,
+                    Self::new(entry.as_path(), extensions)?,
                 );
             } else {
                 return Err(format!("Unsupported path: {:#?}.", entry));
@@ -117,38 +130,91 @@ enum Type {
     Path,
 }
 
+/// Sanitize a string so that it can be a valid identifier.
+/// Replaces invalid characters with underscores
+fn sanitize_ident(input: &str) -> Ident {
+    let name: String = input
+        .chars()
+        .map(|c| if is_xid_continue(c) { c } else { '_' })
+        .collect();
+
+    if !is_xid_start(name.chars().next().expect("Name is not empty")) {
+        format_ident!("test_{name}")
+    } else {
+        format_ident!("{name}")
+    }
+}
+
+/// Given a starting name and a set of taken names, generate a new name that is unique in the `taken_names` set
+fn generate_name(starting_name: Ident, taken_names: &mut HashSet<Ident>) -> Ident {
+    if taken_names.insert(starting_name.clone()) {
+        return starting_name;
+    }
+
+    for i in 2.. {
+        let new_name = format_ident!("{starting_name}_{i}");
+        if taken_names.insert(new_name.clone()) {
+            return new_name;
+        }
+    }
+
+    unreachable!()
+}
+
 fn generate_from_tree(
     tree: &Tree,
-    parsed: &ForEachArgs,
+    parsed: &TestEachArgs,
     stream: &mut TokenStream,
     invocation_type: &Type,
-) -> Result<(), String> {
-    for file in &tree.here {
-        let file_name = format_ident!("{}", file.file_stem().unwrap().to_str().unwrap());
+) {
+    let mut taken_names_folders = HashSet::new();
+    for (name, directory) in tree.children.iter() {
+        let file_name = name.file_name().unwrap().to_str().unwrap();
+        let file_name = sanitize_ident(file_name);
+        let file_name = generate_name(file_name, &mut taken_names_folders);
+
+        let mut sub_stream = TokenStream::new();
+        generate_from_tree(directory, parsed, &mut sub_stream, invocation_type);
+        stream.extend(quote! {
+            mod #file_name {
+                use super::*;
+                #sub_stream
+            }
+        });
+    }
+
+    let mut taken_names_files = HashSet::new();
+    for file in tree.here.iter() {
+        let file_name = file.file_stem().unwrap().to_str().unwrap();
+        let file_name = sanitize_ident(file_name);
+        let file_name = generate_name(file_name, &mut taken_names_files);
 
         let function = &parsed.function;
 
-        let arguments = if parsed.extensions.is_empty() {
+        let arguments: TokenStream = if parsed.extensions.is_empty() {
             let input = file.canonicalize().unwrap();
             let input = input.to_str().unwrap();
 
             match invocation_type {
                 Type::File => quote!(include_str!(#input)),
-                Type::Path => quote!(#input),
+                Type::Path => quote!(std::path::Path::new(#input)),
             }
         } else {
             let mut arguments = TokenStream::new();
 
             for extension in &parsed.extensions {
-                let input = match file.with_extension(extension).canonicalize() {
-                    Ok(path) => path,
-                    Err(e) => return Err(format!("Failed to read expected file {}.{extension}: {e}", file.display())),
-                };
+                let input = file.with_extension(extension).canonicalize().unwrap();
+                if !input.exists() {
+                    abort_call_site!(format!(
+                        "Expected file {:?} with extension {}, but it does not exist.",
+                        file, extension
+                    ))
+                }
                 let input = input.to_str().unwrap();
 
                 arguments.extend(match invocation_type {
                     Type::File => quote!(include_str!(#input),),
-                    Type::Path => quote!(#input,),
+                    Type::Path => quote!(std::path::Path::new(#input),),
                 });
             }
 
@@ -162,24 +228,10 @@ fn generate_from_tree(
             }
         });
     }
-
-    for (name, directory) in &tree.children {
-        let mut sub_stream = TokenStream::new();
-        generate_from_tree(directory, parsed, &mut sub_stream, invocation_type)?;
-        let name = format_ident!("{}", name.file_name().unwrap().to_str().unwrap());
-        stream.extend(quote! {
-            mod #name {
-                use super::*;
-                #sub_stream
-            }
-        });
-    }
-
-    Ok(())
 }
 
 fn test_each(input: proc_macro::TokenStream, invocation_type: &Type) -> proc_macro::TokenStream {
-    let parsed = parse_macro_input!(input as ForEachArgs);
+    let parsed = parse_macro_input!(input as TestEachArgs);
 
     if !Path::new(&parsed.path.value()).is_dir() {
         abort_token_stream!(parsed.path.span(), "Given directory does not exist");
@@ -187,7 +239,7 @@ fn test_each(input: proc_macro::TokenStream, invocation_type: &Type) -> proc_mac
 
     let mut tokens = TokenStream::new();
 
-    let files = match Tree::new(parsed.path.value().as_ref(), !parsed.extensions.is_empty()) {
+    let files = match Tree::new(parsed.path.value().as_ref(), &parsed.extensions) {
         Ok(files) => files,
         Err(e) => abort_token_stream!(parsed.path.span(), e),
     };
@@ -195,6 +247,8 @@ fn test_each(input: proc_macro::TokenStream, invocation_type: &Type) -> proc_mac
     if let Err(e) = generate_from_tree(&files, &parsed, &mut tokens, invocation_type) {
         abort_token_stream!(parsed.path.span(), e)
     }
+    let files = Tree::new(parsed.path.value().as_ref(), &parsed.extensions);
+    generate_from_tree(&files, &parsed, &mut tokens, invocation_type);
 
     if let Some(module) = parsed.module {
         tokens = quote! {
