@@ -12,7 +12,6 @@ repository = "https://github.com/binary-banter/test-each-file"
 proc-macro = true
 
 [dependencies]
-quote = "1.0.33"
-proc-macro2 = "1.0.69"
-syn = { version = "2.0.39", features = ["full"] }
-proc-macro-error = "1.0.4"
+quote = "1.0.36"
+proc-macro2 = "1.0.81"
+syn = { version = "2.0.59", features = ["full"] }

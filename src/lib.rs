@@ -1,6 +1,5 @@
 #![doc = include_str!("../README.md")]
 use proc_macro2::{Ident, TokenStream};
-use proc_macro_error::{abort, abort_call_site, proc_macro_error};
 use quote::{format_ident, quote};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -13,6 +12,18 @@ struct ForEachArgs {
     module: Option<Ident>,
     function: Expr,
     extensions: Vec<String>,
+}
+
+macro_rules! abort {
+    ($span:expr, $message:expr) => {
+        return Err(syn::Error::new($span, $message))
+    };
+}
+
+macro_rules! abort_token_stream {
+    ($span:expr, $message:expr) => {
+        return syn::Error::new($span, $message).into_compile_error().into()
+    };
 }
 
 impl Parse for ForEachArgs {
@@ -79,7 +90,7 @@ struct Tree {
 }
 
 impl Tree {
-    fn new(base: &Path, ignore_extensions: bool) -> Self {
+    fn new(base: &Path, ignore_extensions: bool) -> Result<Self, String> {
         let mut tree = Self::default();
         for entry in base.read_dir().unwrap() {
             let mut entry = entry.unwrap().path();
@@ -91,13 +102,13 @@ impl Tree {
             } else if entry.is_dir() {
                 tree.children.insert(
                     entry.as_path().to_path_buf(),
-                    Self::new(entry.as_path(), ignore_extensions),
+                    Self::new(entry.as_path(), ignore_extensions)?,
                 );
             } else {
-                abort_call_site!(format!("Unsupported path: {:#?}.", entry))
+                return Err(format!("Unsupported path: {:#?}.", entry));
             }
         }
-        tree
+        Ok(tree)
     }
 }
 
@@ -166,11 +177,16 @@ fn test_each(input: proc_macro::TokenStream, invocation_type: &Type) -> proc_mac
     let parsed = parse_macro_input!(input as ForEachArgs);
 
     if !Path::new(&parsed.path.value()).is_dir() {
-        abort!(parsed.path.span(), "Given directory does not exist");
+        abort_token_stream!(parsed.path.span(), "Given directory does not exist");
     }
 
     let mut tokens = TokenStream::new();
-    let files = Tree::new(parsed.path.value().as_ref(), !parsed.extensions.is_empty());
+
+    let files = match Tree::new(parsed.path.value().as_ref(), !parsed.extensions.is_empty()) {
+        Ok(files) => files,
+        Err(e) => abort_token_stream!(parsed.path.span(), e),
+    };
+
     generate_from_tree(&files, &parsed, &mut tokens, invocation_type);
 
     if let Some(module) = parsed.module {
@@ -190,7 +206,6 @@ fn test_each(input: proc_macro::TokenStream, invocation_type: &Type) -> proc_mac
 ///
 /// See crate level documentation for details.
 #[proc_macro]
-#[proc_macro_error]
 pub fn test_each_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     test_each(input, &Type::File)
 }
@@ -199,7 +214,6 @@ pub fn test_each_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream
 ///
 /// See crate level documentation for details.
 #[proc_macro]
-#[proc_macro_error]
 pub fn test_each_path(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     test_each(input, &Type::Path)
 }
