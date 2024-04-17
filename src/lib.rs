@@ -122,7 +122,7 @@ fn generate_from_tree(
     parsed: &ForEachArgs,
     stream: &mut TokenStream,
     invocation_type: &Type,
-) {
+) -> Result<(), String> {
     for file in &tree.here {
         let file_name = format_ident!("{}", file.file_stem().unwrap().to_str().unwrap());
 
@@ -140,7 +140,10 @@ fn generate_from_tree(
             let mut arguments = TokenStream::new();
 
             for extension in &parsed.extensions {
-                let input = file.with_extension(extension).canonicalize().unwrap();
+                let input = match file.with_extension(extension).canonicalize() {
+                    Ok(path) => path,
+                    Err(e) => return Err(format!("Failed to read expected file {}.{extension}: {e}", file.display())),
+                };
                 let input = input.to_str().unwrap();
 
                 arguments.extend(match invocation_type {
@@ -162,7 +165,7 @@ fn generate_from_tree(
 
     for (name, directory) in &tree.children {
         let mut sub_stream = TokenStream::new();
-        generate_from_tree(directory, parsed, &mut sub_stream, invocation_type);
+        generate_from_tree(directory, parsed, &mut sub_stream, invocation_type)?;
         let name = format_ident!("{}", name.file_name().unwrap().to_str().unwrap());
         stream.extend(quote! {
             mod #name {
@@ -171,6 +174,8 @@ fn generate_from_tree(
             }
         });
     }
+
+    Ok(())
 }
 
 fn test_each(input: proc_macro::TokenStream, invocation_type: &Type) -> proc_macro::TokenStream {
@@ -187,7 +192,9 @@ fn test_each(input: proc_macro::TokenStream, invocation_type: &Type) -> proc_mac
         Err(e) => abort_token_stream!(parsed.path.span(), e),
     };
 
-    generate_from_tree(&files, &parsed, &mut tokens, invocation_type);
+    if let Err(e) = generate_from_tree(&files, &parsed, &mut tokens, invocation_type) {
+        abort_token_stream!(parsed.path.span(), e)
+    }
 
     if let Some(module) = parsed.module {
         tokens = quote! {
