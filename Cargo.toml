@@ -1,6 +1,6 @@
 [package]
 name = "test_each_file"
-version = "0.3.2"
+version = "0.3.3"
 authors = ["Jonathan Brouwer <jonathantbrouwer@gmail.com>", "Julia Dijkstra"]
 description = "Generates a test for each file in a specified directory."
 keywords = ["test", "proc-macro"]

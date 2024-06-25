@@ -2,6 +2,7 @@
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
@@ -203,7 +204,14 @@ fn generate_from_tree(
             let mut arguments = TokenStream::new();
 
             for extension in &parsed.extensions {
-                let input = match file.with_extension(extension).canonicalize() {
+                // Add `.extension` to the end of the filename
+                let mut file: OsString = file.clone().into();
+                file.push(".");
+                file.push(extension);
+                let file: PathBuf = file.into();
+                
+                // Canonicalize the file path
+                let input = match file.canonicalize() {
                     Ok(path) => path,
                     Err(e) => return Err(format!("Failed to read expected file {}.{extension}: {e}", file.display())),
                 };
