@@ -1,0 +1,4 @@
+[workspace]
+members = ["test_src", "test_macro"]
+default-members = ["test_src", "test_macro"]
+resolver = "2"
