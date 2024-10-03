@@ -1,5 +1,5 @@
 #![doc = include_str!("../README.md")]
-use proc_macro2::{Ident, TokenStream};
+use proc_macro2::{Ident, Span, TokenStream};
 use quote::{format_ident, quote};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
@@ -142,7 +142,7 @@ fn sanitize_ident(input: &str) -> Ident {
     if !is_xid_start(name.chars().next().expect("Name is not empty")) {
         format_ident!("test_{name}")
     } else {
-        format_ident!("{name}")
+        Ident::new_raw(&name, Span::call_site())
     }
 }
 
