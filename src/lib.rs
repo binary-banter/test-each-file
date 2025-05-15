@@ -1,6 +1,7 @@
 #![doc = include_str!("../README.md")]
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{format_ident, quote};
+use syn::token::Async;
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -15,6 +16,7 @@ struct TestEachArgs {
     function: Expr,
     extensions: Vec<String>,
     attributes: Vec<Meta>,
+    async_fn: Option<Async>,
 }
 
 macro_rules! abort {
@@ -32,7 +34,7 @@ macro_rules! abort_token_stream {
 impl Parse for TestEachArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         // Optionally parse attributes if `#` is used. Aborts if none are given.
-        let attributes = input
+        let attributes: Vec<Meta> = input
             .parse::<Token![#]>()
             .and_then(|_| {
                 let content;
@@ -44,6 +46,19 @@ impl Parse for TestEachArgs {
                 }
             })
             .unwrap_or_default();
+
+        // Optionally mark as async.
+        // The async keyword is the error span if we did not specify an attribute.
+        let async_span = input.span();
+        let async_fn = match input.parse::<Token![async]>() {
+            Ok(token) => {
+                if attributes.is_empty() {
+                    abort!(async_span, "Expected at least one attribute (e.g., `#[tokio::test]`) when `async` is given.");
+                }
+                Some(token)
+            },
+            Err(_) => None,
+        };
 
         // Optionally parse extensions if the keyword `for` is used. Aborts if none are given.
         let extensions = input
@@ -97,6 +112,7 @@ impl Parse for TestEachArgs {
             function,
             extensions,
             attributes,
+            async_fn,
         })
     }
 }
@@ -248,12 +264,23 @@ fn generate_from_tree(
             });
         }
 
-        stream.extend(quote! {
-            #[test]
-            fn #file_name() {
-                (#function)(#arguments)
-            }
-        });
+        if let Some(async_keyword) = &parsed.async_fn {
+            // For async functions, we'd need something like `#[tokio::test]` instead of `#[test]`.
+            // Here we assume the user will have already provided that in the list of attributes.
+            stream.extend(quote! {
+                #async_keyword fn #file_name() {
+                    (#function)(#arguments).await
+                }
+            });
+        } else {
+            // Default, non-async test.
+            stream.extend(quote! {
+                #[test]
+                fn #file_name() {
+                    (#function)(#arguments)
+                }
+            });
+        }
     }
 
     Ok(())
