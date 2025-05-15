@@ -6,7 +6,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use syn::{bracketed, parse_macro_input, Expr, LitStr, Token};
+use syn::{bracketed, parse_macro_input, Expr, LitStr, Meta, Token};
 use unicode_ident::{is_xid_continue, is_xid_start};
 
 struct TestEachArgs {
@@ -14,6 +14,7 @@ struct TestEachArgs {
     module: Option<Ident>,
     function: Expr,
     extensions: Vec<String>,
+    attributes: Vec<Meta>,
 }
 
 macro_rules! abort {
@@ -30,6 +31,20 @@ macro_rules! abort_token_stream {
 
 impl Parse for TestEachArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        // Optionally parse attributes if `#` is used. Aborts if none are given.
+        let attributes = input
+            .parse::<Token![#]>()
+            .and_then(|_| {
+                let content;
+                bracketed!(content in input);
+
+                match Punctuated::<Meta, Token![,]>::parse_separated_nonempty(&content) {
+                    Ok(attributes) => Ok(attributes.into_iter().collect()),
+                    Err(e) => abort!(e.span(), "Expected at least one attribute to be given."),
+                }
+            })
+            .unwrap_or_default();
+
         // Optionally parse extensions if the keyword `for` is used. Aborts if none are given.
         let extensions = input
             .parse::<Token![for]>()
@@ -81,6 +96,7 @@ impl Parse for TestEachArgs {
             module,
             function,
             extensions,
+            attributes,
         })
     }
 }
@@ -225,6 +241,12 @@ fn generate_from_tree(
 
             quote!([#arguments])
         };
+
+        for attribute in &parsed.attributes {
+            stream.extend(quote! {
+                #[#attribute]
+            });
+        }
 
         stream.extend(quote! {
             #[test]
