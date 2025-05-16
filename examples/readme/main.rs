@@ -64,4 +64,14 @@ mod tests {
 
         test_each_file! { in "./examples/readme/duplicate_names/" => empty}
     }
+
+    mod attributes_async {
+        use test_each_file::test_each_file;
+
+        async fn run(input: &str) {
+            assert!(input.split_whitespace().all(|n| n.parse::<usize>().is_ok()));
+        }
+
+        test_each_file! { #[tokio::test] async in "./examples/readme/resources_simple/" as simple => run }
+    }
 }
