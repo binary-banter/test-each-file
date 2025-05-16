@@ -117,8 +117,20 @@ The expression that is called on each file can also be a closure, for example:
 test_each_file! { in "./resources" => |c: &str| assert!(c.contains("Hello World")) }
 ```
 
+Multiple attributes can optionally be applied to each test, for example:
+
+```rust
+test_each_file! { #[ignore, cfg(target_os = "linux")] in "./resources" => test }
+```
+
+You can specify that each test is async, in this case a test macro such as `#[tokio::test]` must be specified explicitly. For example:
+
+```rust
+test_each_file! { #[tokio::test] async in "./resources" => test }
+```
+
 All the options above can be combined, for example:
 
 ```rust
-test_each_file! { for ["in", "out"] in "./resources" as example => |[a, b]: [&str; 2]| assert_eq!(a, b) }
+test_each_file! { #[tokio::test, ignore, cfg(target_os = "linux")] async for ["in", "out"] in "./resources" as example => async |[a, b]: [&str; 2]| assert_eq!(a, b) }
 ```

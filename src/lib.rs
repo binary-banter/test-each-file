@@ -6,7 +6,8 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use syn::{bracketed, parse_macro_input, Expr, LitStr, Token};
+use syn::token::Async;
+use syn::{bracketed, parse_macro_input, Expr, LitStr, Meta, Token};
 use unicode_ident::{is_xid_continue, is_xid_start};
 
 struct TestEachArgs {
@@ -14,6 +15,8 @@ struct TestEachArgs {
     module: Option<Ident>,
     function: Expr,
     extensions: Vec<String>,
+    attributes: Vec<Meta>,
+    async_fn: Option<Async>,
 }
 
 macro_rules! abort {
@@ -30,6 +33,33 @@ macro_rules! abort_token_stream {
 
 impl Parse for TestEachArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        // Optionally parse attributes if `#` is used. Aborts if none are given.
+        let attributes: Vec<Meta> = input
+            .parse::<Token![#]>()
+            .and_then(|_| {
+                let content;
+                bracketed!(content in input);
+
+                match Punctuated::<Meta, Token![,]>::parse_separated_nonempty(&content) {
+                    Ok(attributes) => Ok(attributes.into_iter().collect()),
+                    Err(e) => abort!(e.span(), "Expected at least one attribute to be given."),
+                }
+            })
+            .unwrap_or_default();
+
+        // Optionally mark as async.
+        // The async keyword is the error span if we did not specify an attribute.
+        let async_span = input.span();
+        let async_fn = match input.parse::<Token![async]>() {
+            Ok(token) => {
+                if attributes.is_empty() {
+                    abort!(async_span, "Expected at least one attribute (e.g., `#[tokio::test]`) when `async` is given.");
+                }
+                Some(token)
+            }
+            Err(_) => None,
+        };
+
         // Optionally parse extensions if the keyword `for` is used. Aborts if none are given.
         let extensions = input
             .parse::<Token![for]>()
@@ -81,6 +111,8 @@ impl Parse for TestEachArgs {
             module,
             function,
             extensions,
+            attributes,
+            async_fn,
         })
     }
 }
@@ -231,12 +263,29 @@ fn generate_from_tree(
             quote!([#arguments])
         };
 
-        stream.extend(quote! {
-            #[test]
-            fn #file_name() {
-                (#function)(#arguments)
-            }
-        });
+        for attribute in &parsed.attributes {
+            stream.extend(quote! {
+                #[#attribute]
+            });
+        }
+
+        if let Some(async_keyword) = &parsed.async_fn {
+            // For async functions, we'd need something like `#[tokio::test]` instead of `#[test]`.
+            // Here we assume the user will have already provided that in the list of attributes.
+            stream.extend(quote! {
+                #async_keyword fn #file_name() {
+                    (#function)(#arguments).await
+                }
+            });
+        } else {
+            // Default, non-async test.
+            stream.extend(quote! {
+                #[test]
+                fn #file_name() {
+                    (#function)(#arguments)
+                }
+            });
+        }
     }
 
     Ok(())
