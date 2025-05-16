@@ -209,11 +209,16 @@ fn generate_from_tree(
                 file.push(".");
                 file.push(extension);
                 let file: PathBuf = file.into();
-                
+
                 // Canonicalize the file path
                 let input = match file.canonicalize() {
                     Ok(path) => path,
-                    Err(e) => return Err(format!("Failed to read expected file {}.{extension}: {e}", file.display())),
+                    Err(e) => {
+                        return Err(format!(
+                            "Failed to read expected file {}.{extension}: {e}",
+                            file.display()
+                        ))
+                    }
                 };
                 let input = input.to_str().unwrap();
 
