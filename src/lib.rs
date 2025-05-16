@@ -1,12 +1,12 @@
 #![doc = include_str!("../README.md")]
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{format_ident, quote};
-use syn::token::Async;
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
+use syn::token::Async;
 use syn::{bracketed, parse_macro_input, Expr, LitStr, Meta, Token};
 use unicode_ident::{is_xid_continue, is_xid_start};
 
@@ -56,7 +56,7 @@ impl Parse for TestEachArgs {
                     abort!(async_span, "Expected at least one attribute (e.g., `#[tokio::test]`) when `async` is given.");
                 }
                 Some(token)
-            },
+            }
             Err(_) => None,
         };
 
@@ -241,11 +241,16 @@ fn generate_from_tree(
                 file.push(".");
                 file.push(extension);
                 let file: PathBuf = file.into();
-                
+
                 // Canonicalize the file path
                 let input = match file.canonicalize() {
                     Ok(path) => path,
-                    Err(e) => return Err(format!("Failed to read expected file {}.{extension}: {e}", file.display())),
+                    Err(e) => {
+                        return Err(format!(
+                            "Failed to read expected file {}.{extension}: {e}",
+                            file.display()
+                        ))
+                    }
                 };
                 let input = input.to_str().unwrap();
 
