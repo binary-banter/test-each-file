@@ -49,7 +49,7 @@ impl Parse for IgnorePatterns {
             return Ok(IgnorePatterns::default());
         }
         let _: Ident = input.parse().unwrap();
-        
+
         // Optional ":" separator
         let _ = input.parse::<Token![:]>();
 
@@ -87,9 +87,17 @@ impl Parse for IgnorePatterns {
 
 impl IgnorePatterns {
     /// Check if a given name should be ignored
+    ///
     /// Returns Some(reason) if ignored, or None if not ignored
     fn should_ignore(&self, name: &str) -> Option<String> {
-        self.patterns.get(name).cloned()
+        if let Some(stripped) = name.strip_prefix("r#") {
+            self.patterns
+                .get(stripped)
+                .cloned()
+                .or_else(|| self.patterns.get(name).cloned())
+        } else {
+            self.patterns.get(name).cloned()
+        }
     }
 }
 
