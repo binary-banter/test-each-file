@@ -90,14 +90,8 @@ impl IgnorePatterns {
     ///
     /// Returns Some(reason) if ignored, or None if not ignored
     fn should_ignore(&self, name: &str) -> Option<String> {
-        if let Some(stripped) = name.strip_prefix("r#") {
-            self.patterns
-                .get(stripped)
-                .cloned()
-                .or_else(|| self.patterns.get(name).cloned())
-        } else {
-            self.patterns.get(name).cloned()
-        }
+        let lookup_name = name.strip_prefix("r#").unwrap_or(name);
+        self.patterns.get(lookup_name).cloned()
     }
 }
 
